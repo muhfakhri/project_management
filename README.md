@@ -48,7 +48,7 @@ A comprehensive web-based project management application built with Laravel 12, 
 
 - **Team Management** - Add and manage team members with specific roles
 
-- **Blocker System** - Report and track blockers with helper assignmentLaravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+- **Blocker System** - Report and track blockers with helper assignmentLaravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all mo`dern web application frameworks, making it a breeze to get started with the framework.
 
 - **Real-time Notifications** - Get notified about task updates, blockers, and team activities
 
