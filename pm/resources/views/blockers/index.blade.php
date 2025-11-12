@@ -166,14 +166,28 @@
                                                 @endif
                                             </td>
                                             <td>
-                                                <strong>{{ $blocker->card->title }}</strong>
-                                                <br>
-                                                <small class="text-muted">{{ $blocker->card->board->name }}</small>
+                                                @if($blocker->card)
+                                                    <div>
+                                                        <strong class="d-block">{{ $blocker->card->card_title }}</strong>
+                                                        @if($blocker->card->board)
+                                                            <small class="text-muted">
+                                                                <i class="bi bi-kanban me-1"></i>{{ $blocker->card->board->board_name }}</small>
+                                                        @endif
+                                                    </div>
+                                                @else
+                                                    <span class="text-muted fst-italic">
+                                                        <i class="bi bi-file-x me-1"></i>Task not found
+                                                    </span>
+                                                @endif
                                             </td>
                                             <td>
-                                                <span class="badge bg-primary">
-                                                    {{ $blocker->card->board->project->name }}
-                                                </span>
+                                                @if($blocker->card && $blocker->card->board && $blocker->card->board->project)
+                                                    <span class="badge bg-primary" style="font-size: 0.85rem;">
+                                                        <i class="bi bi-folder me-1"></i>{{ $blocker->card->board->project->project_name }}
+                                                    </span>
+                                                @else
+                                                    <span class="text-muted fst-italic">-</span>
+                                                @endif
                                             </td>
                                             <td>
                                                 <div style="max-width: 300px;">

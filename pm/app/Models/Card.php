@@ -38,7 +38,10 @@ class Card extends Model
         'is_approved',
         'approved_by',
         'approved_at',
-        'rejection_reason'
+        'rejection_reason',
+        'is_overdue',
+        'deadline_notified_at',
+        'is_template'
     ];
 
     protected $casts = [
@@ -51,7 +54,10 @@ class Card extends Model
         'total_pause_duration' => 'integer',
         'needs_approval' => 'boolean',
         'is_approved' => 'boolean',
-        'approved_at' => 'datetime'
+        'approved_at' => 'datetime',
+        'is_overdue' => 'boolean',
+        'deadline_notified_at' => 'datetime',
+        'is_template' => 'boolean'
     ];
 
     protected static function boot()
@@ -121,9 +127,93 @@ class Card extends Model
         return $this->assignments()->with('user')->get()->pluck('user');
     }
 
+    // ==================== DEADLINE METHODS ====================
+    
     public function isOverdue(): bool
     {
         return $this->due_date && $this->due_date->isPast() && $this->status !== 'done';
+    }
+
+    /**
+     * Get days remaining until deadline (negative if overdue)
+     */
+    public function daysRemaining(): ?int
+    {
+        if (!$this->due_date) {
+            return null;
+        }
+        
+        return now()->diffInDays($this->due_date, false);
+    }
+
+    /**
+     * Get deadline status with color
+     */
+    public function getDeadlineStatus(): array
+    {
+        if (!$this->due_date || $this->status === 'done') {
+            return [
+                'status' => 'none',
+                'color' => 'secondary',
+                'text' => 'No deadline',
+                'badge' => 'NO DEADLINE'
+            ];
+        }
+
+        $days = $this->daysRemaining();
+
+        if ($days < 0) {
+            return [
+                'status' => 'overdue',
+                'color' => 'danger',
+                'text' => 'Overdue by ' . abs($days) . ' day(s)',
+                'badge' => 'OVERDUE'
+            ];
+        } elseif ($days === 0) {
+            return [
+                'status' => 'today',
+                'color' => 'danger',
+                'text' => 'Due today',
+                'badge' => 'DUE TODAY'
+            ];
+        } elseif ($days === 1) {
+            return [
+                'status' => 'tomorrow',
+                'color' => 'warning',
+                'text' => 'Due tomorrow',
+                'badge' => 'DUE TOMORROW'
+            ];
+        } elseif ($days <= 3) {
+            return [
+                'status' => 'soon',
+                'color' => 'warning',
+                'text' => 'Due in ' . $days . ' days',
+                'badge' => $days . ' DAYS LEFT'
+            ];
+        } else {
+            return [
+                'status' => 'upcoming',
+                'color' => 'info',
+                'text' => 'Due in ' . $days . ' days',
+                'badge' => $days . ' DAYS'
+            ];
+        }
+    }
+
+    /**
+     * Mark task as overdue
+     */
+    public function markAsOverdue(): void
+    {
+        $this->update(['is_overdue' => true]);
+    }
+
+    /**
+     * Clear overdue status
+     */
+    public function clearOverdue(): void
+    {
+        $this->update(['is_overdue' => false, 'deadline_notified_at' => null]);
     }
 
     public function getTotalTimeSpent(): float
@@ -226,6 +316,84 @@ class Card extends Model
         }
 
         return false;
+    }
+
+    /**
+     * Check if a user can work on this task (time tracking, comments, attachments, blocker)
+     * Only assigned users can work on the task
+     */
+    public function canWorkOn($user): bool
+    {
+        if (!$user) {
+            return false;
+        }
+
+        // Locked (approved & done) tasks cannot be worked on
+        if ($this->isLocked()) {
+            return false;
+        }
+
+        // Project archived - cannot work
+        if ($this->isProjectArchived()) {
+            return false;
+        }
+
+        // Project Admins CANNOT work on tasks - they only manage
+        $project = $this->board->project;
+        $member = $project->members()->where('user_id', $user->user_id)->first();
+        if ($member && $member->role === 'Project Admin') {
+            return false; // Project Admin tidak bisa menggunakan fitur user
+        }
+
+        // Task creator can work on it (if not Project Admin)
+        if ($this->created_by === $user->user_id) {
+            return true;
+        }
+
+        // Team leads can work on any task
+        if ($member && $member->isTeamLead()) {
+            return true;
+        }
+
+        // Check if user is assigned to this task
+        $isAssigned = $this->assignments()->where('user_id', $user->user_id)->exists();
+        
+        return $isAssigned;
+    }
+
+    /**
+     * Check if user can report blocker for this task
+     */
+    public function canReportBlocker($user): bool
+    {
+        if (!$user) {
+            return false;
+        }
+
+        // Project Admins CANNOT report blockers - they only manage
+        $project = $this->board->project;
+        $member = $project->members()->where('user_id', $user->user_id)->first();
+        if ($member && $member->role === 'Project Admin') {
+            return false;
+        }
+
+        // Cannot report blocker if task is already done and approved
+        if ($this->isLocked()) {
+            return false;
+        }
+
+        // Cannot report blocker if task is done (even if not approved yet)
+        if ($this->status === 'done') {
+            return false;
+        }
+
+        // Project archived - cannot report blocker
+        if ($this->isProjectArchived()) {
+            return false;
+        }
+
+        // Only assigned users or task creator can report blockers
+        return $this->canWorkOn($user);
     }
 
     /**
@@ -452,7 +620,7 @@ class Card extends Model
     }
 
     /**
-     * Check if user can approve this task (Team Lead or Project Admin only)
+     * Check if user can approve this task (Team Lead ONLY, NOT Project Admin)
      */
     public function canApprove($user): bool
     {
@@ -461,19 +629,14 @@ class Card extends Model
         }
 
         $project = $this->board->project;
-        
-        // Project owner can approve
-        if ($project->created_by === $user->user_id) {
-            return true;
-        }
 
-        // Check if user is Project Admin or Team Lead
+        // Check if user is Team Lead ONLY (Project Admin cannot approve tasks)
         $member = $project->members()->where('user_id', $user->user_id)->first();
-        return $member && ($member->isAdmin() || $member->isTeamLead());
+        return $member && $member->isTeamLead();
     }
 
     /**
-     * Approve this task (Team Lead or Project Admin only)
+     * Approve this task (Team Lead ONLY, NOT Project Admin)
      */
     public function approve($user): void
     {
@@ -583,5 +746,27 @@ class Card extends Model
             ]);
             return false;
         }
+    }
+
+    // ==================== RELATIONSHIPS FOR NEW FEATURES ====================
+    
+    public function attachments(): HasMany
+    {
+        return $this->hasMany(TaskAttachment::class, 'card_id', 'card_id');
+    }
+
+    public function taskComments(): HasMany
+    {
+        return $this->hasMany(TaskComment::class, 'card_id', 'card_id')->orderBy('created_at', 'desc');
+    }
+
+    public function dependencies(): HasMany
+    {
+        return $this->hasMany(TaskDependency::class, 'task_id', 'card_id');
+    }
+
+    public function dependents(): HasMany
+    {
+        return $this->hasMany(TaskDependency::class, 'depends_on_task_id', 'card_id');
     }
 }

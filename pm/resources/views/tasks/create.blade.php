@@ -206,8 +206,12 @@ document.addEventListener('DOMContentLoaded', function() {
                     data.forEach(member => {
                         const hasActiveTask = member.has_active_task;
                         const activeTaskTitle = member.active_task_title;
-                        const isDisabled = hasActiveTask ? 'disabled' : '';
-                        const opacityClass = hasActiveTask ? 'opacity-50' : '';
+                        const isProjectAdmin = member.is_project_admin || false;
+                        const canMultitask = member.can_multitask || false;
+                        
+                        // Only disable if has active task AND not a Project Admin
+                        const isDisabled = (hasActiveTask && !canMultitask) ? 'disabled' : '';
+                        const opacityClass = (hasActiveTask && !canMultitask) ? 'opacity-50' : '';
                         
                         const profilePicture = member.user.profile_picture 
                             ? `<img src="/storage/${member.user.profile_picture}" 
@@ -218,6 +222,16 @@ document.addEventListener('DOMContentLoaded', function() {
                                     style="width: 40px; height: 40px; font-size: 14px; font-weight: bold;">
                                     ${(member.user.full_name || member.user.username).substring(0, 2).toUpperCase()}
                                </div>`;
+                        
+                        // Status message for busy users
+                        let statusBadge = '';
+                        if (hasActiveTask) {
+                            if (canMultitask) {
+                                statusBadge = `<br><small class="text-info"><i class="fas fa-info-circle me-1"></i>Working on: ${activeTaskTitle} <span class="badge bg-info">Can Multitask</span></small>`;
+                            } else {
+                                statusBadge = `<br><small class="text-danger"><i class="fas fa-exclamation-circle me-1"></i>Busy: ${activeTaskTitle}</small>`;
+                            }
+                        }
                         
                         html += `
                             <div class="col-md-6 mb-2">
@@ -234,7 +248,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                             <div class="flex-grow-1">
                                                 <strong>${member.user.full_name || member.user.username}</strong>
                                                 <br><small class="text-muted">${member.role.replace('_', ' ')}</small>
-                                                ${hasActiveTask ? `<br><small class="text-danger"><i class="fas fa-exclamation-circle me-1"></i>Busy: ${activeTaskTitle}</small>` : ''}
+                                                ${statusBadge}
                                             </div>
                                         </div>
                                     </label>

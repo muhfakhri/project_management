@@ -388,9 +388,14 @@
             <ul class="dropdown-menu" id="mobileMenuDropdown">
                 @if(isset($menuItems) && is_array($menuItems))
                     @foreach ($menuItems as $index => $item)
+                        @if(isset($item['is_group']) && $item['is_group'])
+                            {{-- Group header - skip in mobile menu --}}
+                            @continue
+                        @endif
+                        
                         @php
-                            $isActive = request()->routeIs($item['route'] ?? '') 
-                                || collect($item['children'] ?? [])->pluck('route')->contains(fn($r) => request()->routeIs($r));
+                            $isActive = isset($item['route']) && (request()->routeIs($item['route']) 
+                                || collect($item['children'] ?? [])->pluck('route')->contains(fn($r) => request()->routeIs($r)));
                         @endphp
                         
                         @if (!empty($item['children']))
@@ -402,7 +407,7 @@
                                    role="button" 
                                    aria-expanded="{{ $isActive ? 'true' : 'false' }}"
                                    onclick="event.stopPropagation();">
-                                    <span><i class="{{ $item['icon'] }} me-2"></i>{{ $item['label'] }}</span>
+                                    <span><i class="{{ $item['icon'] ?? '' }} me-2"></i>{{ $item['label'] }}</span>
                                     <i class="bi bi-chevron-down small ms-auto"></i>
                                 </a>
                             </li>
@@ -419,11 +424,14 @@
                             @if (!$loop->last)
                                 <li><hr class="dropdown-divider my-1"></li>
                             @endif
-                        @else
+                        @elseif(isset($item['route']))
                             <!-- Menu tanpa submenu -->
                             <li>
                                 <a class="dropdown-item {{ $isActive ? 'active fw-bold' : '' }}" href="{{ route($item['route']) }}">
-                                    <i class="{{ $item['icon'] }} me-2"></i>{{ $item['label'] }}
+                                    <i class="{{ $item['icon'] ?? '' }} me-2"></i>{{ $item['label'] }}
+                                    @if(isset($item['badge']) && $item['badge'] > 0)
+                                        <span class="badge {{ $item['badge_class'] ?? 'bg-primary' }} ms-2">{{ $item['badge'] }}</span>
+                                    @endif
                                 </a>
                             </li>
                         @endif

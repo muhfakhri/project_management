@@ -1,95 +1,10 @@
 @extends('layouts.app')
 
+@section('title', 'All Approvals')
+
 @section('content')
-<div class="container-fluid py-4">
-    <div class="row mb-4">
-        <div class="col-12">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <h2 class="mb-1">
-                        <i class="fas fa-clipboard-check text-primary me-2"></i>
-                        Review & Approvals
-                    </h2>
-                    <p class="text-muted mb-0">Manage all pending approvals for tasks and subtasks</p>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Statistics Cards -->
-    <div class="row mb-4">
-        <div class="col-lg-3 col-md-6 mb-3">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-body">
-                    <div class="d-flex align-items-center">
-                        <div class="flex-shrink-0">
-                            <div class="bg-warning bg-opacity-10 p-3 rounded">
-                                <i class="fas fa-hourglass-half fa-2x text-warning"></i>
-                            </div>
-                        </div>
-                        <div class="flex-grow-1 ms-3">
-                            <h6 class="text-muted mb-1">Pending Subtasks</h6>
-                            <h3 class="mb-0">{{ $stats['pending_subtasks'] }}</h3>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-lg-3 col-md-6 mb-3">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-body">
-                    <div class="d-flex align-items-center">
-                        <div class="flex-shrink-0">
-                            <div class="bg-info bg-opacity-10 p-3 rounded">
-                                <i class="fas fa-tasks fa-2x text-info"></i>
-                            </div>
-                        </div>
-                        <div class="flex-grow-1 ms-3">
-                            <h6 class="text-muted mb-1">Pending Tasks</h6>
-                            <h3 class="mb-0">{{ $stats['pending_tasks'] }}</h3>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-lg-3 col-md-6 mb-3">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-body">
-                    <div class="d-flex align-items-center">
-                        <div class="flex-shrink-0">
-                            <div class="bg-success bg-opacity-10 p-3 rounded">
-                                <i class="fas fa-check-circle fa-2x text-success"></i>
-                            </div>
-                        </div>
-                        <div class="flex-grow-1 ms-3">
-                            <h6 class="text-muted mb-1">Approved Today</h6>
-                            <h3 class="mb-0">{{ $stats['approved_today'] }}</h3>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-lg-3 col-md-6 mb-3">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-body">
-                    <div class="d-flex align-items-center">
-                        <div class="flex-shrink-0">
-                            <div class="bg-danger bg-opacity-10 p-3 rounded">
-                                <i class="fas fa-times-circle fa-2x text-danger"></i>
-                            </div>
-                        </div>
-                        <div class="flex-grow-1 ms-3">
-                            <h6 class="text-muted mb-1">Total Rejected</h6>
-                            <h3 class="mb-0">{{ $stats['rejected_count'] }}</h3>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+<div class="container mt-4">
+    <h1 class="mb-3"><i class="fas fa-check-circle text-primary me-2"></i>All Approvals</h1>
 
     <!-- Filters -->
     <div class="card shadow-sm mb-4">
@@ -104,7 +19,6 @@
                             <option value="tasks" {{ $filter === 'tasks' ? 'selected' : '' }}>Tasks Only</option>
                         </select>
                     </div>
-
                     <div class="col-md-4">
                         <label class="form-label">Filter by Project</label>
                         <select name="project" class="form-select" onchange="document.getElementById('filterForm').submit()">
@@ -116,7 +30,6 @@
                             @endforeach
                         </select>
                     </div>
-
                     <div class="col-md-4">
                         <label class="form-label">Filter by Status</label>
                         <select name="status" class="form-select" onchange="document.getElementById('filterForm').submit()">
@@ -129,6 +42,153 @@
             </form>
         </div>
     </div>
+
+    <!-- Project Completion Approvals (Project Admin only) -->
+    @if($isProjectAdmin && $pendingProjects->count() > 0)
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-white border-bottom">
+            <h5 class="mb-0">
+                <i class="fas fa-folder-check text-success me-2"></i>
+                Project Completion Requests
+                <span class="badge bg-success">{{ $pendingProjects->count() }}</span>
+            </h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Project Name</th>
+                            <th>Requested By</th>
+                            <th>Requested At</th>
+                            <th>Team Members</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach($pendingProjects as $project)
+                        <tr>
+                            <td>
+                                <strong>{{ $project->project_name }}</strong>
+                                @if($project->description)
+                                    <br><small class="text-muted">{{ Str::limit($project->description, 60) }}</small>
+                                @endif
+                            </td>
+                            <td>
+                                @if($project->requester)
+                                    <span class="badge bg-secondary">{{ $project->requester->username }}</span>
+                                @else
+                                    <span class="text-muted">Unknown</span>
+                                @endif
+                            </td>
+                            <td>
+                                @if($project->requested_at)
+                                    {{ $project->requested_at->format('M d, Y H:i') }}
+                                @else
+                                    <span class="text-muted">N/A</span>
+                                @endif
+                            </td>
+                            <td>
+                                @if($project->members->count() > 0)
+                                    @foreach($project->members->take(3) as $member)
+                                        <span class="badge bg-info">{{ $member->user->username }}</span>
+                                    @endforeach
+                                    @if($project->members->count() > 3)
+                                        <span class="badge bg-light text-dark">+{{ $project->members->count() - 3 }}</span>
+                                    @endif
+                                @else
+                                    <span class="text-muted">No members</span>
+                                @endif
+                            </td>
+                            <td>
+                                <span class="badge bg-warning text-dark">Pending Review</span>
+                            </td>
+                            <td>
+                                <a href="{{ route('projects.show', $project->project_id) }}" class="btn btn-sm btn-info" title="View Project">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                                <button class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#approveProjectModal{{ $project->project_id }}" title="Approve">
+                                    <i class="fas fa-check"></i>
+                                </button>
+                                <button class="btn btn-sm btn-danger" data-bs-toggle="modal" data-bs-target="#rejectProjectModal{{ $project->project_id }}" title="Reject">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </td>
+                        </tr>
+
+                        <!-- Approve Modal -->
+                        <div class="modal fade" id="approveProjectModal{{ $project->project_id }}" tabindex="-1">
+                            <div class="modal-dialog">
+                                <div class="modal-content">
+                                    <form action="{{ route('projects.approveCompletion', $project->project_id) }}" method="POST">
+                                        @csrf
+                                        <div class="modal-header">
+                                            <h5 class="modal-title">Approve Project Completion</h5>
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                        </div>
+                                        <div class="modal-body">
+                                            <div class="alert alert-success">
+                                                <i class="fas fa-check-circle me-2"></i>
+                                                <strong>Approving:</strong> {{ $project->project_name }}
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">Approval Notes (Optional)</label>
+                                                <textarea class="form-control" name="approval_notes" rows="3" 
+                                                          placeholder="Add any notes about this approval..."></textarea>
+                                            </div>
+                                        </div>
+                                        <div class="modal-footer">
+                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                            <button type="submit" class="btn btn-success">
+                                                <i class="fas fa-check me-1"></i>Approve
+                                            </button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Reject Modal -->
+                        <div class="modal fade" id="rejectProjectModal{{ $project->project_id }}" tabindex="-1">
+                            <div class="modal-dialog">
+                                <div class="modal-content">
+                                    <form action="{{ route('projects.rejectCompletion', $project->project_id) }}" method="POST">
+                                        @csrf
+                                        <div class="modal-header">
+                                            <h5 class="modal-title">Reject Project Completion</h5>
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                        </div>
+                                        <div class="modal-body">
+                                            <div class="alert alert-danger">
+                                                <i class="fas fa-exclamation-triangle me-2"></i>
+                                                <strong>Rejecting:</strong> {{ $project->project_name }}
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">
+                                                    Reason for Rejection <span class="text-danger">*</span>
+                                                </label>
+                                                <textarea class="form-control" name="approval_notes" rows="3" required 
+                                                          placeholder="Explain why this project completion is being rejected..."></textarea>
+                                            </div>
+                                        </div>
+                                        <div class="modal-footer">
+                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                            <button type="submit" class="btn btn-danger">
+                                                <i class="fas fa-times me-1"></i>Reject
+                                            </button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    @endif
 
     <!-- Pending Subtasks -->
     @if(($filter === 'all' || $filter === 'subtasks') && $subtasks->count() > 0)
@@ -419,7 +479,7 @@
     @endif
 
     <!-- Empty State -->
-    @if($subtasks->count() === 0 && $tasks->count() === 0)
+    @if($subtasks->count() === 0 && $tasks->count() === 0 && (!$isProjectAdmin || $pendingProjects->count() === 0))
     <div class="card shadow-sm">
         <div class="card-body text-center py-5">
             <i class="fas fa-check-double fa-4x text-muted mb-3"></i>

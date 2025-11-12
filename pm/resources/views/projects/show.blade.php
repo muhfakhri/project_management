@@ -174,6 +174,109 @@
                 </div>
             </div>
 
+            <!-- Project Completion Status -->
+            @if(!$project->is_archived)
+                @if($project->completion_status === 'pending_approval')
+                    <div class="card mb-4 shadow-sm border-warning">
+                        <div class="card-header bg-warning text-dark">
+                            <h5 class="mb-0"><i class="fas fa-clock me-2"></i>Project Completion Pending Approval</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="alert alert-info mb-3">
+                                <i class="fas fa-info-circle me-2"></i>
+                                <strong>Requested by:</strong> {{ $project->requester->full_name ?? $project->requester->username }}
+                                <br>
+                                <strong>Requested at:</strong> {{ $project->requested_at->format('M d, Y \a\t H:i') }}
+                            </div>
+
+                            @if($project->isAdmin(auth()->id()))
+                                <div class="d-flex gap-2">
+                                    <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#approveProjectModal">
+                                        <i class="fas fa-check-circle me-2"></i>Approve Project
+                                    </button>
+                                    <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#rejectProjectModal">
+                                        <i class="fas fa-times-circle me-2"></i>Reject Request
+                                    </button>
+                                </div>
+                            @else
+                                <p class="text-muted mb-0">
+                                    <i class="fas fa-hourglass-half me-2"></i>Waiting for Project Admin approval...
+                                </p>
+                            @endif
+                        </div>
+                    </div>
+                @elseif($project->completion_status === 'completed')
+                    <div class="card mb-4 shadow-sm border-success">
+                        <div class="card-header bg-success text-white">
+                            <h5 class="mb-0"><i class="fas fa-check-circle me-2"></i>Project Completed</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="alert alert-success mb-0">
+                                <i class="fas fa-check-circle me-2"></i>
+                                <strong>This project has been completed!</strong>
+                                <br>
+                                <strong>Approved by:</strong> {{ $project->approver->full_name ?? $project->approver->username }}
+                                <br>
+                                <strong>Approved at:</strong> {{ $project->approved_at->format('M d, Y \a\t H:i') }}
+                                @if($project->approval_notes)
+                                    <br>
+                                    <strong>Notes:</strong> {{ $project->approval_notes }}
+                                @endif
+                            </div>
+                        </div>
+                    </div>
+                @elseif($project->isTeamLead(auth()->id()) && $project->canRequestCompletion())
+                    @if($project->completion_status === 'rejected')
+                        <div class="alert alert-danger alert-dismissible fade show mb-3" role="alert">
+                            <h6 class="alert-heading">
+                                <i class="fas fa-exclamation-circle me-2"></i>Previous Request Rejected
+                            </h6>
+                            <p class="mb-2">
+                                <strong>Rejected by:</strong> {{ $project->approver->full_name ?? $project->approver->username }}
+                                <br>
+                                <strong>Rejected at:</strong> {{ $project->approved_at->format('M d, Y \a\t H:i') }}
+                            </p>
+                            @if($project->approval_notes)
+                                <hr>
+                                <p class="mb-0">
+                                    <strong>Reason:</strong> {{ $project->approval_notes }}
+                                </p>
+                            @endif
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    @endif
+                    <div class="card mb-4 shadow-sm border-primary">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="mb-0"><i class="fas fa-flag-checkered me-2"></i>Request Project Completion</h5>
+                        </div>
+                        <div class="card-body">
+                            <p class="mb-3">
+                                <i class="fas fa-check-circle text-success me-2"></i>
+                                All tasks have been completed and approved! You can now request project completion approval from the Project Admin.
+                            </p>
+                            <form action="{{ route('projects.requestCompletion', $project->project_id) }}" method="POST">
+                                @csrf
+                                <button type="submit" class="btn btn-primary" onclick="return confirm('Are you sure you want to request project completion approval?')">
+                                    <i class="fas fa-paper-plane me-2"></i>{{ $project->completion_status === 'rejected' ? 'Re-Request' : 'Request' }} Completion Approval
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                @elseif($project->isTeamLead(auth()->id()))
+                    <div class="card mb-4 shadow-sm border-secondary">
+                        <div class="card-header bg-secondary text-white">
+                            <h5 class="mb-0"><i class="fas fa-tasks me-2"></i>Project Completion Progress</h5>
+                        </div>
+                        <div class="card-body">
+                            <p class="text-muted mb-0">
+                                <i class="fas fa-info-circle me-2"></i>
+                                Complete and approve all tasks before requesting project completion.
+                            </p>
+                        </div>
+                    </div>
+                @endif
+            @endif
+
             <!-- Project Boards -->
             <div class="card mb-4 shadow-sm">
                 <div class="card-header bg-gradient-primary text-white d-flex justify-content-between align-items-center">
@@ -282,7 +385,7 @@
             <div class="card mb-4 shadow-sm">
                 <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
                     <h5 class="mb-0"><i class="fas fa-users me-2 text-primary"></i>Team Members</h5>
-                    @if($project->isAdmin(auth()->id()))
+                    @if($project->isAdmin(auth()->id()) && !$project->is_archived)
                         <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addMemberModal">
                             <i class="fas fa-user-plus me-1"></i>Add
                         </button>
@@ -323,7 +426,7 @@
                                         <span class="text-{{ $roleColors[$member->role] ?? 'secondary' }}">{{ $member->role }}</span>
                                     </small>
                                 </div>
-                                @if($project->isAdmin(auth()->id()) && $member->user_id !== auth()->id())
+                                @if($project->isAdmin(auth()->id()) && $member->user_id !== auth()->id() && !$project->is_archived)
                                     <form action="{{ route('projects.removeMember', [$project, $member]) }}" method="POST" class="d-inline">
                                         @csrf
                                         @method('DELETE')
@@ -975,5 +1078,77 @@ document.getElementById('user_id')?.addEventListener('change', function() {
     }
 });
 </script>
+
+<!-- Approve Project Modal -->
+<div class="modal fade" id="approveProjectModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="{{ route('projects.approveCompletion', $project->project_id) }}" method="POST">
+                @csrf
+                <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title"><i class="fas fa-check-circle me-2"></i>Approve Project Completion</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-success">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <strong>You are about to approve this project as completed.</strong>
+                    </div>
+                    <p>Project: <strong>{{ $project->project_name }}</strong></p>
+                    <p>Requested by: <strong>{{ $project->requester ? ($project->requester->full_name ?? $project->requester->username) : 'N/A' }}</strong></p>
+                    
+                    <div class="mb-3">
+                        <label for="approval_notes_approve" class="form-label">Approval Notes (Optional)</label>
+                        <textarea class="form-control" id="approval_notes_approve" name="approval_notes" rows="3" 
+                                  placeholder="Add any notes or comments about this approval..."></textarea>
+                        <small class="text-muted">These notes will be visible to all team members.</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-check-circle me-2"></i>Approve Project
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Reject Project Modal -->
+<div class="modal fade" id="rejectProjectModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="{{ route('projects.rejectCompletion', $project->project_id) }}" method="POST">
+                @csrf
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title"><i class="fas fa-times-circle me-2"></i>Reject Project Completion</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        <strong>You are about to reject this project completion request.</strong>
+                    </div>
+                    <p>Project: <strong>{{ $project->project_name }}</strong></p>
+                    <p>Requested by: <strong>{{ $project->requester ? ($project->requester->full_name ?? $project->requester->username) : 'N/A' }}</strong></p>
+                    
+                    <div class="mb-3">
+                        <label for="approval_notes_reject" class="form-label">Rejection Reason <span class="text-danger">*</span></label>
+                        <textarea class="form-control" id="approval_notes_reject" name="approval_notes" rows="3" required
+                                  placeholder="Please explain why you are rejecting this completion request..."></textarea>
+                        <small class="text-muted">This reason will be sent to the Team Lead.</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">
+                        <i class="fas fa-times-circle me-2"></i>Reject Request
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 
 @endsection

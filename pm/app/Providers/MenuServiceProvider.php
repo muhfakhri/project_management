@@ -24,7 +24,14 @@ class MenuServiceProvider extends ServiceProvider
     {
         // Share menu items with both sidebar and navbar
         View::composer(['partials.sidebar', 'partials.navbar'], function ($view) {
-            $menuItems = $this->getMenuItems();
+            try {
+                $menuItems = $this->getMenuItems();
+            } catch (\Throwable $e) {
+                // Log the error and provide a safe fallback so views won't crash
+                \Log::error('MenuServiceProvider:getMenuItems failed: ' . $e->getMessage());
+                $menuItems = [];
+            }
+
             $view->with('menuItems', $menuItems);
         });
     }
@@ -40,15 +47,30 @@ class MenuServiceProvider extends ServiceProvider
         }
 
         $menuItems = [
+            // GROUP: OVERVIEW
+            [
+                'is_group' => true,
+                'label' => 'Overview',
+                'items' => []
+            ],
             [
                 'label' => 'Dashboard',
                 'icon' => 'bi bi-house',
                 'route' => 'dashboard',
+                'group' => 'Overview',
             ],
             [
                 'label' => 'Statistics',
                 'icon' => 'bi bi-graph-up',
                 'route' => 'statistics.index',
+                'group' => 'Overview',
+            ],
+            
+            // GROUP: PROJECT MANAGEMENT
+            [
+                'is_group' => true,
+                'label' => 'Project Management',
+                'items' => []
             ],
         ];
 
@@ -57,6 +79,7 @@ class MenuServiceProvider extends ServiceProvider
             'label' => 'Projects',
             'icon' => 'bi bi-folder',
             'route' => 'projects.index',
+            'group' => 'Project Management',
             'children' => [
                 ['label' => 'All Projects', 'route' => 'projects.index'],
             ],
@@ -69,11 +92,67 @@ class MenuServiceProvider extends ServiceProvider
 
         $menuItems[] = $projectsMenu;
 
+        // Approvals menu - for Project Admin and Team Lead
+        if (auth()->check()) {
+            $isProjectAdmin = \App\Models\ProjectMember::where('user_id', auth()->id())
+                ->where('role', 'Project Admin')
+                ->exists();
+            
+            $isTeamLead = \App\Models\ProjectMember::where('user_id', auth()->id())
+                ->where('role', 'Team Lead')
+                ->exists();
+            
+            if ($isProjectAdmin || $isTeamLead) {
+                $pendingCount = 0;
+                
+                // Count pending project completions (Project Admin only)
+                if ($isProjectAdmin) {
+                    $pendingCount += \App\Models\Project::where('created_by', auth()->id())
+                        ->where('completion_status', 'pending_approval')
+                        ->count();
+                }
+                
+                // Count pending tasks and subtasks (Team Lead only)
+                if ($isTeamLead) {
+                    $userProjectIds = \App\Models\ProjectMember::where('user_id', auth()->id())
+                        ->whereIn('role', ['Project Admin', 'Team Lead'])
+                        ->pluck('project_id');
+                    
+                    // Pending tasks
+                    $pendingCount += \App\Models\Card::whereHas('board', function($q) use ($userProjectIds) {
+                            $q->whereIn('project_id', $userProjectIds);
+                        })
+                        ->where('status', 'done')
+                        ->where('is_approved', false)
+                        ->count();
+                    
+                    // Pending subtasks
+                    $pendingCount += \App\Models\SubTask::whereHas('card.board', function($q) use ($userProjectIds) {
+                            $q->whereIn('project_id', $userProjectIds);
+                        })
+                        ->where('status', 'done')
+                        ->where('is_approved', false)
+                        ->whereNotNull('completed_at')
+                        ->count();
+                }
+
+                $menuItems[] = [
+                    'label' => 'Approvals',
+                    'icon' => 'fas fa-check-circle',
+                    'route' => 'approvals.index',
+                    'group' => 'Project Management',
+                    'badge' => $pendingCount,
+                    'badge_class' => 'bg-warning'
+                ];
+            }
+        }
+
         // Tasks menu - conditionally include "Create Task"
         $tasksMenu = [
             'label' => 'Tasks',
             'icon' => 'bi bi-check-square',
             'route' => 'tasks.index',
+            'group' => 'Project Management',
             'children' => [
                 ['label' => 'All Tasks', 'route' => 'tasks.index'],
                 ['label' => 'My Tasks', 'route' => 'tasks.my'],
@@ -92,36 +171,55 @@ class MenuServiceProvider extends ServiceProvider
         }
 
         $menuItems[] = $tasksMenu;
+        
+        $menuItems[] = [
+            'label' => 'Blockers',
+            'icon' => 'fas fa-exclamation-triangle',
+            'route' => 'blockers.index',
+            'group' => 'Project Management',
+        ];
 
-        $menuItems = array_merge($menuItems, [
-            [
-                'label' => 'Team',
-                'icon' => 'bi bi-people',
-                'route' => 'team.index',
-                'children' => [
-                    ['label' => 'Team Members', 'route' => 'team.index'],
-                ],
+        // GROUP: TEAM COLLABORATION
+        $menuItems[] = [
+            'is_group' => true,
+            'label' => 'Team Collaboration',
+            'items' => []
+        ];
+        
+        $menuItems[] = [
+            'label' => 'Team',
+            'icon' => 'bi bi-people',
+            'route' => 'team.index',
+            'group' => 'Team Collaboration',
+            'children' => [
+                ['label' => 'Team Members', 'route' => 'team.index'],
             ],
-            [
-                'label' => 'Blockers',
-                'icon' => 'fas fa-exclamation-triangle',
-                'route' => 'blockers.index',
+        ];
+        
+        $menuItems[] = [
+            'label' => 'Comments',
+            'icon' => 'bi bi-chat-dots',
+            'route' => 'comments.index',
+            'group' => 'Team Collaboration',
+        ];
+        
+        // GROUP: TIME MANAGEMENT
+        $menuItems[] = [
+            'is_group' => true,
+            'label' => 'Time Management',
+            'items' => []
+        ];
+        
+        $menuItems[] = [
+            'label' => 'Time Logs',
+            'icon' => 'bi bi-clock-history',
+            'route' => 'time-logs.index',
+            'group' => 'Time Management',
+            'children' => [
+                ['label' => 'All Time Logs', 'route' => 'time-logs.index'],
+                ['label' => 'My Time Logs', 'route' => 'time-logs.my-logs'],
             ],
-            [
-                'label' => 'Time Logs',
-                'icon' => 'bi bi-clock-history',
-                'route' => 'time-logs.index',
-                'children' => [
-                    ['label' => 'All Time Logs', 'route' => 'time-logs.index'],
-                    ['label' => 'My Time Logs', 'route' => 'time-logs.my-logs'],
-                ],
-            ],
-            [
-                'label' => 'Comments',
-                'icon' => 'bi bi-chat-dots',
-                'route' => 'comments.index',
-            ],
-        ]);
+        ];
 
         // Add Assign Members menu item for users who can manage teams
         if (auth()->check()) {
@@ -198,6 +296,7 @@ class MenuServiceProvider extends ServiceProvider
                     'label' => 'Approvals',
                     'icon' => 'bi bi-clipboard-check',
                     'route' => 'approvals.index',
+                    'group' => 'Team Collaboration',
                     'badge' => $pendingCount > 0 ? $pendingCount : null,
                     'badge_class' => 'bg-warning',
                 ];
@@ -206,10 +305,18 @@ class MenuServiceProvider extends ServiceProvider
 
         // Only show User Management and Reports for Admin or Project Admin
         if ($isProjectAdmin) {
+            // GROUP: ADMINISTRATION
+            $menuItems[] = [
+                'is_group' => true,
+                'label' => 'Administration',
+                'items' => []
+            ];
+            
             $menuItems[] = [
                 'label' => 'User Management',
                 'icon' => 'bi bi-person-gear',
                 'route' => 'users.index',
+                'group' => 'Administration',
                 'children' => [
                     ['label' => 'All Users', 'route' => 'users.index'],
                     ['label' => 'Add User', 'route' => 'users.create'],
@@ -221,6 +328,7 @@ class MenuServiceProvider extends ServiceProvider
                 'label' => 'Reports',
                 'icon' => 'bi bi-file-earmark-bar-graph',
                 'route' => 'reports.index',
+                'group' => 'Administration',
             ];
         }
 

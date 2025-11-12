@@ -85,6 +85,19 @@ class BlockerController extends Controller
 
         $card = Card::with('board.project')->findOrFail($validated['card_id']);
         
+        // Check if user can report blocker
+        if (!$card->canReportBlocker(Auth::user())) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You are not authorized to report blocker for this task. Only assigned members can report blockers on tasks that are not yet completed.'
+                ], 403);
+            }
+            
+            return redirect()->route('tasks.show', $card->card_id)
+                ->with('error', 'You are not authorized to report blocker for this task. Only assigned members can report blockers on tasks that are not yet completed.');
+        }
+        
         // Check if user has access to this task
         $hasAccess = DB::table('project_members')
             ->where('project_id', $card->board->project_id)

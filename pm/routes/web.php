@@ -4,13 +4,13 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Auth;
 use App\Http\Controllers\AuthController;
 
-// Redirect root to login page or dashboard if authenticated
+// Landing Page
 Route::get('/', function () {
     if (Auth::check()) {
         return redirect()->route('dashboard');
     }
-    return redirect()->route('login');
-});
+    return view('landing');
+})->name('landing');
 
 // Login/Logout routes
 Route::get('/login', [AuthController::class, 'showLoginForm'])->name('login');
@@ -52,6 +52,7 @@ Route::middleware('auth')->group(function () {
     Route::delete('/notifications/{notification}', [App\Http\Controllers\NotificationController::class, 'destroy'])->name('notifications.destroy');
     
     // Project Management Routes
+    Route::get('/approvals', [App\Http\Controllers\ProjectController::class, 'approvals'])->name('approvals.index');
     Route::get('/projects/archived/list', [App\Http\Controllers\ProjectController::class, 'archived'])->name('projects.archived');
     Route::resource('projects', App\Http\Controllers\ProjectController::class);
     Route::get('/projects/{project}/kanban', [App\Http\Controllers\ProjectController::class, 'kanban'])->name('projects.kanban');
@@ -60,6 +61,11 @@ Route::middleware('auth')->group(function () {
     Route::post('/projects/{project}/members', [App\Http\Controllers\ProjectController::class, 'addMember'])->name('projects.addMember');
     Route::delete('/projects/{project}/members/{member}', [App\Http\Controllers\ProjectController::class, 'removeMember'])->name('projects.removeMember');
     Route::patch('/projects/{project}/members/{member}/role', [App\Http\Controllers\ProjectController::class, 'updateMemberRole'])->name('projects.updateMemberRole');
+    
+    // Project Completion Approval Routes
+    Route::post('/projects/{project}/request-completion', [App\Http\Controllers\ProjectController::class, 'requestCompletion'])->name('projects.requestCompletion');
+    Route::post('/projects/{project}/approve-completion', [App\Http\Controllers\ProjectController::class, 'approveCompletion'])->name('projects.approveCompletion');
+    Route::post('/projects/{project}/reject-completion', [App\Http\Controllers\ProjectController::class, 'rejectCompletion'])->name('projects.rejectCompletion');
     
     // Board Management Routes
     Route::resource('boards', App\Http\Controllers\BoardController::class);
@@ -90,6 +96,15 @@ Route::middleware('auth')->group(function () {
     Route::post('/subtasks/{subtask}/approve', [App\Http\Controllers\SubtaskController::class, 'approve'])->name('subtasks.approve');
     Route::post('/subtasks/{subtask}/reject', [App\Http\Controllers\SubtaskController::class, 'reject'])->name('subtasks.reject');
     
+    // Task Comments Routes
+    Route::post('/cards/{card}/comments', [App\Http\Controllers\TaskCommentController::class, 'store'])->name('task-comments.store');
+    Route::delete('/task-comments/{comment}', [App\Http\Controllers\TaskCommentController::class, 'destroy'])->name('task-comments.destroy');
+    
+    // Task Attachments Routes
+    Route::post('/cards/{card}/attachments', [App\Http\Controllers\TaskAttachmentController::class, 'store'])->name('task-attachments.store');
+    Route::get('/attachments/{attachment}/download', [App\Http\Controllers\TaskAttachmentController::class, 'download'])->name('task-attachments.download');
+    Route::delete('/task-attachments/{attachment}', [App\Http\Controllers\TaskAttachmentController::class, 'destroy'])->name('task-attachments.destroy');
+    
     // Blocker Routes - Help Request System
     Route::get('/blockers', [App\Http\Controllers\BlockerController::class, 'index'])->name('blockers.index');
     Route::get('/blockers/create', [App\Http\Controllers\BlockerController::class, 'create'])->name('blockers.create');
@@ -100,7 +115,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/blockers/{blocker}/comments', [App\Http\Controllers\BlockerController::class, 'addComment'])->name('blockers.addComment');
     
     // Approval Management Routes (Project Admin & Team Lead)
-    Route::get('/approvals', [App\Http\Controllers\ApprovalController::class, 'index'])->name('approvals.index');
+    // NOTE: approvals route is handled by ProjectController::approvals to include project completion approvals
     
     // Team Management Routes
     Route::get('/team', [App\Http\Controllers\TeamController::class, 'index'])->name('team.index');
@@ -160,6 +175,11 @@ Route::middleware('auth')->group(function () {
                 return $member->user_id !== $project->created_by;
             })
             ->map(function($member) {
+                // Check if user is Project Admin (can handle multiple tasks)
+                $isProjectAdmin = App\Models\ProjectMember::where('user_id', $member->user_id)
+                    ->where('role', 'Project Admin')
+                    ->exists();
+
                 $activeTask = App\Models\CardAssignment::where('user_id', $member->user_id)
                     ->whereHas('card', function($q) {
                         $q->whereIn('status', ['todo', 'in_progress']);
@@ -168,8 +188,10 @@ Route::middleware('auth')->group(function () {
                     ->first();
                 
                 $memberData = $member->toArray();
+                $memberData['is_project_admin'] = $isProjectAdmin;
                 $memberData['has_active_task'] = $activeTask ? true : false;
                 $memberData['active_task_title'] = $activeTask ? $activeTask->card->card_title : null;
+                $memberData['can_multitask'] = $isProjectAdmin; // Project Admins can handle multiple tasks
                 
                 return $memberData;
             })

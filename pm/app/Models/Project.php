@@ -19,7 +19,17 @@ class Project extends Model
         'deadline',
         'is_archived',
         'archived_at',
-        'archived_by'
+        'archived_by',
+        'is_overdue',
+        'deadline_notified_at',
+        'completion_percentage',
+        'is_template',
+        'completion_status',
+        'requested_by',
+        'requested_at',
+        'approved_by',
+        'approved_at',
+        'approval_notes'
     ];
 
     protected $casts = [
@@ -28,7 +38,13 @@ class Project extends Model
         'is_archived' => 'boolean',
         'archived_at' => 'datetime',
         'created_at' => 'datetime',
-        'updated_at' => 'datetime'
+        'updated_at' => 'datetime',
+        'is_overdue' => 'boolean',
+        'deadline_notified_at' => 'datetime',
+        'completion_percentage' => 'decimal:2',
+        'is_template' => 'boolean',
+        'requested_at' => 'datetime',
+        'approved_at' => 'datetime'
     ];
 
     protected static function boot()
@@ -66,6 +82,16 @@ class Project extends Model
     public function archivedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'archived_by', 'user_id');
+    }
+
+    public function requester(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'requested_by', 'user_id');
+    }
+
+    public function approver(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'approved_by', 'user_id');
     }
 
     // Helper methods
@@ -130,5 +156,99 @@ class Project extends Model
             ->count();
 
         return $totalCards > 0 ? ($completedCards / $totalCards) * 100 : 0;
+    }
+
+    // ==================== DEADLINE METHODS ====================
+    
+    public function isOverdue(): bool
+    {
+        return $this->deadline && $this->deadline->isPast() && !$this->is_archived;
+    }
+
+    public function daysRemaining(): ?int
+    {
+        if (!$this->deadline) {
+            return null;
+        }
+        
+        return now()->diffInDays($this->deadline, false);
+    }
+
+    public function getDeadlineStatus(): array
+    {
+        if (!$this->deadline || $this->is_archived) {
+            return [
+                'status' => 'none',
+                'color' => 'secondary',
+                'text' => 'No deadline',
+                'badge' => 'NO DEADLINE'
+            ];
+        }
+
+        $days = $this->daysRemaining();
+
+        if ($days < 0) {
+            return [
+                'status' => 'overdue',
+                'color' => 'danger',
+                'text' => 'Overdue by ' . abs($days) . ' day(s)',
+                'badge' => 'OVERDUE'
+            ];
+        } elseif ($days <= 7) {
+            return [
+                'status' => 'soon',
+                'color' => 'warning',
+                'text' => 'Due in ' . $days . ' days',
+                'badge' => $days . ' DAYS LEFT'
+            ];
+        } else {
+            return [
+                'status' => 'upcoming',
+                'color' => 'info',
+                'text' => 'Due in ' . $days . ' days',
+                'badge' => $days . ' DAYS'
+            ];
+        }
+    }
+
+    // Check if all tasks are completed
+    public function allTasksCompleted(): bool
+    {
+        $totalTasks = Card::whereHas('board', function($q) {
+            $q->where('project_id', $this->project_id);
+        })->count();
+
+        if ($totalTasks === 0) {
+            return false; // No tasks means project not ready
+        }
+
+        $completedTasks = Card::whereHas('board', function($q) {
+            $q->where('project_id', $this->project_id);
+        })->where('status', 'done')
+          ->where('is_approved', true)
+          ->count();
+
+        return $totalTasks === $completedTasks;
+    }
+
+    // Check if can request completion
+    public function canRequestCompletion(): bool
+    {
+        // Can request if status is 'working' or 'rejected' (to allow re-request after rejection)
+        return in_array($this->completion_status, ['working', 'rejected'])
+            && $this->allTasksCompleted() 
+            && !$this->is_archived;
+    }
+
+    // Check if pending approval
+    public function isPendingApproval(): bool
+    {
+        return $this->completion_status === 'pending_approval';
+    }
+
+    // Check if completed
+    public function isCompleted(): bool
+    {
+        return $this->completion_status === 'completed';
     }
 }

@@ -4,6 +4,24 @@
 
 @section('content')
 <div class="container-fluid">
+    <!-- Locked Task Warning -->
+    @if($task->isLocked())
+    <div class="alert alert-info alert-dismissible fade show mb-4" role="alert">
+        <i class="fas fa-lock me-2"></i>
+        <strong>Task Locked:</strong> This task has been completed and approved. It is now in read-only mode.
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    @endif
+
+    <!-- Not Assigned Warning -->
+    @if(!$task->canWorkOn(auth()->user()) && !$task->isLocked())
+    <div class="alert alert-warning alert-dismissible fade show mb-4" role="alert">
+        <i class="fas fa-user-slash me-2"></i>
+        <strong>View Only:</strong> You are not assigned to this task. You can only view the details.
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    @endif
+
     <!-- Archived Project Warning -->
     @if($task->board->project->is_archived)
     <div class="alert alert-warning alert-dismissible fade show mb-4" role="alert">
@@ -27,12 +45,12 @@
                     </nav>
                 </div>
                 <div class="btn-group" role="group">
-                    @if(!$task->board->project->is_archived)
+                    @if($task->canReportBlocker(auth()->user()))
                         <button class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#reportBlockerModal">
                             <i class="fas fa-exclamation-triangle me-1"></i>Report Blocker
                         </button>
                     @endif
-                    @if($task->canEdit(auth()->user()) && !$task->board->project->is_archived)
+                    @if($task->canEdit(auth()->user()) && !$task->board->project->is_archived && !$task->isLocked())
                         <a href="{{ route('tasks.edit', $task) }}" class="btn btn-outline-primary">
                             <i class="fas fa-edit me-1"></i>Edit Task
                         </a>
@@ -133,6 +151,18 @@
                                 <span class="badge bg-success">Completed</span>
                                 @break
                         @endswitch
+                        
+                        @if($task->due_date)
+                            @php
+                                $deadlineStatus = $task->getDeadlineStatus();
+                            @endphp
+                            @if($deadlineStatus['status'] !== 'none')
+                                <span class="badge bg-{{ $deadlineStatus['color'] }}">
+                                    <i class="fas fa-{{ $deadlineStatus['status'] === 'overdue' ? 'exclamation-circle' : 'clock' }} me-1"></i>
+                                    {{ $deadlineStatus['badge'] }}
+                                </span>
+                            @endif
+                        @endif
                     </div>
                 </div>
                 <div class="card-body">
@@ -166,7 +196,7 @@
                     </div>
 
                     <!-- Time Tracking Section -->
-                    @if(auth()->user()->canTrackTimeInProject($task->board->project_id))
+                    @if(auth()->user()->canTrackTimeInProject($task->board->project_id) && $task->canWorkOn(auth()->user()))
                     <div class="mt-4 border-top pt-4">
                         <div class="card border-0 bg-light">
                             <div class="card-body">
@@ -542,14 +572,91 @@
 }
 </style>
 
-            <!-- Comments -->
+            <!-- File Attachments -->
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-paperclip me-2"></i>Attachments</h5>
+                    <span class="badge bg-secondary">{{ $task->attachments->count() }}</span>
+                </div>
+                <div class="card-body">
+                    @if($task->attachments->count() > 0)
+                        <div class="list-group list-group-flush">
+                            @foreach($task->attachments as $attachment)
+                                <div class="list-group-item px-0">
+                                    <div class="d-flex align-items-center">
+                                        <div class="me-3">
+                                            <i class="{{ $attachment->fileIcon }} fa-2x"></i>
+                                        </div>
+                                        <div class="flex-grow-1">
+                                            <h6 class="mb-1">{{ $attachment->file_name }}</h6>
+                                            <small class="text-muted">
+                                                {{ $attachment->fileSizeFormatted }} • 
+                                                Uploaded by {{ $attachment->uploader->full_name ?? $attachment->uploader->username }} • 
+                                                {{ $attachment->created_at->diffForHumans() }}
+                                            </small>
+                                        </div>
+                                        <div class="btn-group">
+                                            <a href="{{ route('task-attachments.download', $attachment) }}" 
+                                               class="btn btn-sm btn-outline-primary">
+                                                <i class="fas fa-download"></i>
+                                            </a>
+                                            @if($attachment->uploaded_by === auth()->id() && !$task->board->project->is_archived)
+                                                <form action="{{ route('task-attachments.destroy', $attachment) }}" 
+                                                      method="POST" 
+                                                      class="d-inline">
+                                                    @csrf
+                                                    @method('DELETE')
+                                                    <button type="submit" 
+                                                            class="btn btn-sm btn-outline-danger" 
+                                                            onclick="return confirm('Delete this attachment?')">
+                                                        <i class="fas fa-trash"></i>
+                                                    </button>
+                                                </form>
+                                            @endif
+                                        </div>
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                    @else
+                        <p class="text-muted text-center py-3">No attachments yet.</p>
+                    @endif
+
+                    <!-- Upload Form -->
+                    @if($task->canWorkOn(auth()->user()) && !$task->board->project->is_archived && !$task->isLocked())
+                        <form action="{{ route('task-attachments.store', $task) }}" 
+                              method="POST" 
+                              enctype="multipart/form-data" 
+                              class="mt-4">
+                            @csrf
+                            <div class="input-group">
+                                <input type="file" 
+                                       class="form-control" 
+                                       name="file" 
+                                       required>
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-upload me-1"></i>Upload
+                                </button>
+                            </div>
+                            <small class="text-muted">Max file size: 10MB</small>
+                        </form>
+                    @elseif(!$task->canWorkOn(auth()->user()) && !$task->isLocked())
+                        <div class="alert alert-warning mt-3">
+                            <i class="fas fa-user-slash me-2"></i>
+                            Only assigned members can upload attachments.
+                        </div>
+                    @endif
+                </div>
+            </div>
+
+            <!-- Comments with @mentions -->
             <div class="card">
                 <div class="card-header">
                     <h5 class="mb-0"><i class="fas fa-comments me-2"></i>Comments</h5>
                 </div>
                 <div class="card-body">
-                    @if($task->comments->count() > 0)
-                        @foreach($task->comments as $comment)
+                    @if($task->taskComments->count() > 0)
+                        @foreach($task->taskComments as $comment)
                             <div class="d-flex mb-3">
                                 @if($comment->user->profile_picture)
                                     <img src="{{ asset('storage/' . $comment->user->profile_picture) }}" 
@@ -569,7 +676,7 @@
                                             <small class="text-muted">{{ $comment->created_at->diffForHumans() }}</small>
                                         </div>
                                         @if($comment->user_id === auth()->id() && !$task->board->project->is_archived)
-                                            <form action="{{ route('comments.destroy', $comment) }}" method="POST" class="d-inline">
+                                            <form action="{{ route('task-comments.destroy', $comment) }}" method="POST" class="d-inline">
                                                 @csrf
                                                 @method('DELETE')
                                                 <button type="submit" class="btn btn-sm btn-outline-danger" 
@@ -579,7 +686,7 @@
                                             </form>
                                         @endif
                                     </div>
-                                    <p class="mb-0 mt-2">{{ $comment->content }}</p>
+                                    <p class="mb-0 mt-2">{!! $comment->parsedComment !!}</p>
                                 </div>
                             </div>
                             @if(!$loop->last)
@@ -591,10 +698,9 @@
                     @endif
 
                     <!-- Add Comment Form -->
-                    @if(!$task->board->project->is_archived && !$task->isLocked())
-                        <form action="{{ route('comments.store') }}" method="POST" class="mt-4">
+                    @if($task->canWorkOn(auth()->user()) && !$task->board->project->is_archived && !$task->isLocked())
+                        <form action="{{ route('task-comments.store', $task) }}" method="POST" class="mt-4">
                             @csrf
-                            <input type="hidden" name="card_id" value="{{ $task->card_id }}">
                             <div class="d-flex gap-2">
                                 @if(auth()->user()->profile_picture)
                                     <img src="{{ asset('storage/' . auth()->user()->profile_picture) }}" 
@@ -609,10 +715,11 @@
                                 @endif
                                 <div class="flex-grow-1">
                                     <textarea class="form-control" 
-                                              name="content" 
+                                              name="comment" 
                                               rows="3" 
-                                              placeholder="Add a comment..." 
+                                              placeholder="Add a comment... Use @username to mention someone" 
                                               required></textarea>
+                                    <small class="text-muted">Tip: Type @username to mention team members</small>
                                 </div>
                             </div>
                             <div class="text-end mt-2">
@@ -625,6 +732,11 @@
                         <div class="alert alert-info mt-4">
                             <i class="fas fa-lock me-2"></i>
                             This task has been approved and locked. Comments are disabled.
+                        </div>
+                    @elseif(!$task->canWorkOn(auth()->user()))
+                        <div class="alert alert-warning mt-4">
+                            <i class="fas fa-user-slash me-2"></i>
+                            You are not assigned to this task. Only assigned members can add comments.
                         </div>
                     @endif
                 </div>

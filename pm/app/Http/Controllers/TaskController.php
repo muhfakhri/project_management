@@ -140,24 +140,31 @@ class TaskController extends Controller
                     return back()->withErrors(['assignee_id' => 'User must be a member of the project.'])->withInput();
                 }
 
-                // Enforce: Assignee cannot have other active tasks (todo or in_progress)
-                $activeTask = CardAssignment::where('user_id', $assigneeId)
-                    ->whereHas('card', function ($q) {
-                        $q->whereIn('status', ['todo', 'in_progress']);
-                    })
-                    ->with('card')
-                    ->first();
-                    
-                if ($activeTask) {
-                    $assigneeName = \App\Models\User::find($assigneeId)->full_name ?? \App\Models\User::find($assigneeId)->username;
-                    $activeTaskTitle = $activeTask->card->card_title ?? 'Unknown Task';
-                    $errorMsg = "Cannot assign {$assigneeName} - this user already has an active task: \"{$activeTaskTitle}\". No multitasking is allowed. Please wait until the current task is completed or approved.";
-                    
-                    DB::rollBack();
-                    return back()
-                        ->withErrors(['assignee_id' => $errorMsg])
-                        ->with('error', $errorMsg)
-                        ->withInput();
+                // Check if user is Project Admin (they can handle multiple projects/tasks)
+                $isProjectAdmin = \App\Models\ProjectMember::where('user_id', $assigneeId)
+                    ->where('role', 'Project Admin')
+                    ->exists();
+
+                // Enforce: Non-admin assignees cannot have other active tasks (todo or in_progress)
+                if (!$isProjectAdmin) {
+                    $activeTask = CardAssignment::where('user_id', $assigneeId)
+                        ->whereHas('card', function ($q) {
+                            $q->whereIn('status', ['todo', 'in_progress']);
+                        })
+                        ->with('card')
+                        ->first();
+                        
+                    if ($activeTask) {
+                        $assigneeName = \App\Models\User::find($assigneeId)->full_name ?? \App\Models\User::find($assigneeId)->username;
+                        $activeTaskTitle = $activeTask->card->card_title ?? 'Unknown Task';
+                        $errorMsg = "Cannot assign {$assigneeName} - this user already has an active task: \"{$activeTaskTitle}\". No multitasking is allowed. Please wait until the current task is completed or approved.";
+                        
+                        DB::rollBack();
+                        return back()
+                            ->withErrors(['assignee_id' => $errorMsg])
+                            ->with('error', $errorMsg)
+                            ->withInput();
+                    }
                 }
 
                 // Create the single assignment
@@ -379,15 +386,22 @@ class TaskController extends Controller
             return back()->withErrors(['user_id' => $msg])->with('error', $msg)->withInput();
         }
 
-        // Enforce: assignee cannot have other active tasks (todo or in_progress)
-        $hasActive = CardAssignment::where('user_id', $request->user_id)
-            ->whereHas('card', function ($q) {
-                $q->whereIn('status', ['todo', 'in_progress']);
-            })
+        // Check if user is Project Admin (they can handle multiple projects/tasks)
+        $isProjectAdmin = \App\Models\ProjectMember::where('user_id', $request->user_id)
+            ->where('role', 'Project Admin')
             ->exists();
-        if ($hasActive) {
-            $msg = 'This user already has an active task (no multitasking allowed).';
-            return back()->withErrors(['user_id' => $msg])->with('error', $msg)->withInput();
+
+        // Enforce: Non-admin assignees cannot have other active tasks (todo or in_progress)
+        if (!$isProjectAdmin) {
+            $hasActive = CardAssignment::where('user_id', $request->user_id)
+                ->whereHas('card', function ($q) {
+                    $q->whereIn('status', ['todo', 'in_progress']);
+                })
+                ->exists();
+            if ($hasActive) {
+                $msg = 'This user already has an active task (no multitasking allowed). Only Project Admins can handle multiple tasks.';
+                return back()->withErrors(['user_id' => $msg])->with('error', $msg)->withInput();
+            }
         }
 
         // Check if user is already assigned
@@ -559,6 +573,16 @@ class TaskController extends Controller
         // Load relationships
         $task->load('board.project');
 
+        // Check if task is locked
+        if ($task->isLocked()) {
+            return back()->with('error', 'This task is locked. Cannot start work on completed and approved tasks.');
+        }
+
+        // Check if user can work on this task
+        if (!$task->canWorkOn(auth()->user())) {
+            return back()->with('error', 'You are not authorized to work on this task. Only assigned members can track time.');
+        }
+
         // Check if project is archived
         if ($task->board->project->isArchived()) {
             return back()->with('error', 'Cannot start work on tasks in archived projects.');
@@ -612,6 +636,16 @@ class TaskController extends Controller
         // Load relationships
         $task->load('board.project');
 
+        // Check if task is locked
+        if ($task->isLocked()) {
+            return back()->with('error', 'This task is locked. Cannot pause work on completed and approved tasks.');
+        }
+
+        // Check if user can work on this task
+        if (!$task->canWorkOn(auth()->user())) {
+            return back()->with('error', 'You are not authorized to work on this task.');
+        }
+
         // Check if project is archived
         if ($task->board->project->isArchived()) {
             return back()->with('error', 'Cannot pause tasks in archived projects.');
@@ -650,6 +684,16 @@ class TaskController extends Controller
         // Load relationships
         $task->load('board.project');
 
+        // Check if task is locked
+        if ($task->isLocked()) {
+            return back()->with('error', 'This task is locked. Cannot resume work on completed and approved tasks.');
+        }
+
+        // Check if user can work on this task
+        if (!$task->canWorkOn(auth()->user())) {
+            return back()->with('error', 'You are not authorized to work on this task.');
+        }
+
         // Check if project is archived
         if ($task->board->project->isArchived()) {
             return back()->with('error', 'Cannot resume tasks in archived projects.');
@@ -683,6 +727,16 @@ class TaskController extends Controller
     {
         // Load relationships
         $task->load('board.project', 'assignees');
+
+        // Check if task is locked
+        if ($task->isLocked()) {
+            return back()->with('error', 'This task is already completed and approved. It is locked.');
+        }
+
+        // Check if user can work on this task
+        if (!$task->canWorkOn(auth()->user())) {
+            return back()->with('error', 'You are not authorized to complete this task.');
+        }
 
         // Check if project is archived
         if ($task->board->project->isArchived()) {

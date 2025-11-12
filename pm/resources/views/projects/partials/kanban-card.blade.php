@@ -29,6 +29,15 @@
                 <small class="{{ $card->due_date < now() ? 'text-danger fw-bold' : '' }}">
                     {{ \Carbon\Carbon::parse($card->due_date)->format('M d, Y') }}
                 </small>
+                @php
+                    $deadlineStatus = $card->getDeadlineStatus();
+                @endphp
+                @if($deadlineStatus['status'] !== 'none')
+                    <span class="badge bg-{{ $deadlineStatus['color'] }} ms-2" style="font-size: 9px;">
+                        <i class="fas fa-{{ $deadlineStatus['status'] === 'overdue' ? 'exclamation-circle' : 'clock' }} me-1"></i>
+                        {{ $deadlineStatus['badge'] }}
+                    </span>
+                @endif
             </div>
         @endif
     </div>
