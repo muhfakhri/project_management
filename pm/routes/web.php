@@ -168,11 +168,25 @@ Route::middleware('auth')->group(function () {
     Route::get('/api/projects/{project}/members', function($projectId) {
         $project = App\Models\Project::with(['members.user'])->findOrFail($projectId);
         
-        // Filter out Project Admin (creator) and add active task info for each member
+        // Filter out Project Admin and Team Lead members, add active task info for each member
         $membersWithTaskInfo = $project->members
             ->filter(function($member) use ($project) {
                 // Exclude the project creator (Project Admin)
-                return $member->user_id !== $project->created_by;
+                if ($member->user_id === $project->created_by) {
+                    return false;
+                }
+                
+                // Exclude Team Lead role in project (role = 'Team Lead')
+                if ($member->role === 'Team Lead') {
+                    return false;
+                }
+                
+                // Exclude Project Admin role in project (role = 'Project Admin')
+                if ($member->role === 'Project Admin') {
+                    return false;
+                }
+                
+                return true;
             })
             ->map(function($member) {
                 // Check if user is Project Admin (can handle multiple tasks)

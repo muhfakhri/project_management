@@ -257,13 +257,14 @@ class TaskController extends Controller
         $projects = Project::whereHas('members', function ($query) {
             $query->where('user_id', auth()->id());
         })->with('boards')->get();
-
         $boards = $projects->flatMap(function ($p) { return $p->boards; })->values();
 
         // Get available members (project members not already assigned to this task)
         $assignedUserIds = $task->assignments->pluck('user_id')->toArray();
         $availableMembers = $task->board->project->members()
             ->whereNotIn('user_id', $assignedUserIds)
+            ->where('role', '!=', 'Team Lead')
+            ->where('role', '!=', 'Project Admin')
             ->with('user')
             ->get();
 

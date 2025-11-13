@@ -37,17 +37,20 @@
                                 required>
                             <option value="">Select a team member...</option>
                             @foreach($task->board->project->members as $member)
-                                @if(!$task->assignments->pluck('user_id')->contains($member->user_id))
-                                    <option value="{{ $member->user_id }}" {{ old('user_id') == $member->user_id ? 'selected' : '' }}>
-                                        {{ $member->user->name ?? $member->user->full_name ?? $member->user->username }}
-                                        @if(!empty($member->user->username) && ($member->user->name ?? null) && $member->user->username !== $member->user->name)
-                                            ({{ $member->user->username }})
-                                        @endif
-                                        @if(!empty($member->user->email))
-                                            - {{ $member->user->email }}
-                                        @endif
-                                        [{{ $member->role }}]
-                                    </option>
+                                {{-- Exclude Team Lead and Project Admin roles --}}
+                                @if($member->role !== 'Team Lead' && $member->role !== 'Project Admin')
+                                    @if(!$task->assignments->pluck('user_id')->contains($member->user_id))
+                                        <option value="{{ $member->user_id }}" {{ old('user_id') == $member->user_id ? 'selected' : '' }}>
+                                            {{ $member->user->name ?? $member->user->full_name ?? $member->user->username }}
+                                            @if(!empty($member->user->username) && ($member->user->name ?? null) && $member->user->username !== $member->user->name)
+                                                ({{ $member->user->username }})
+                                            @endif
+                                            @if(!empty($member->user->email))
+                                                - {{ $member->user->email }}
+                                            @endif
+                                            [{{ $member->role }}]
+                                        </option>
+                                    @endif
                                 @endif
                             @endforeach
                         </select>
